@@ -79,3 +79,6 @@
 #opinion-panel.collapsible-module .module-body>details{margin-top:16px;padding-top:12px;border-top:1px solid #e5eae6}
 @media(max-width:600px){#project-overview .collapsible-module{padding:14px 16px}.collapsible-module>.project-section-title>h3{min-width:0;width:100%}}
 .collapsible-module .module-toggle>span:first-child{font-size:15px;font-weight:600;color:#293d35}
+
+/* Important-event calendar stays folded between daily overview and the feed. */
+.macro-calendar>summary{display:flex;justify-content:space-between;gap:12px;align-items:center}.macro-calendar>summary::before{content:'▸'}.macro-calendar[open]>summary::before{content:'▾'}.macro-calendar>summary span{margin-left:auto;font-size:12px;font-weight:400;color:#65776d}.calendar-item-heading{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.calendar-estimated{background:#fff2d8;color:#805f23}.macro-calendar h4{margin:20px 0 0;font-size:14px}.macro-calendar article>details{margin-top:8px;font-size:12px}.macro-calendar article>details summary{font-weight:400}.macro-calendar article a{font-size:12px}.macro-calendar article small{color:#65776d}

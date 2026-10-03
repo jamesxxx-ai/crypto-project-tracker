@@ -49,3 +49,38 @@ class IntelligenceTests(unittest.TestCase):
   result=calendar_error(error)
   self.assertEqual(result['errorCode'],'provider_query_failed');self.assertEqual(result['httpStatus'],400)
   self.assertNotIn('secret',json.dumps(result));error.close()
+
+class CalendarScheduleTests(unittest.TestCase):
+ def rows(self,*rows):return calendar_rows({'success':True,'data':{'events':list(rows)}},lambda x:None)
+ def test_utc_datetime_wins_over_clock_time(self):
+  row=self.rows({'title':'CPI','event_date':'2026-10-14','event_time':'08:30','event_datetime_utc':'2026-10-14T12:30:00Z','timezone':'America/New_York','source_status':'estimated_schedule','evidence_url':'https://example.test/calendar'})[0]
+  self.assertEqual(row['at'],1791981000000);self.assertTrue(row['estimated']);self.assertEqual(row['precision'],'exact');self.assertEqual(row['url'],'https://example.test/calendar')
+ def test_session_is_not_exact_and_preserves_window(self):
+  row=self.rows({'title':'Earnings','event_date':'2026-10-06','time_precision':'session','event_session':'post_market','source_status':'provider_estimate','time_constraint':'after','time_window_start_utc':'2026-10-06T20:00:00Z'})[0]
+  self.assertIsNone(row['at']);self.assertEqual(row['precision'],'session');self.assertTrue(row['estimated']);self.assertIsNotNone(row['windowStart'])
+ def test_local_time_requires_timezone_and_unambiguous_dst(self):
+  base={'title':'Schedule','event_date':'2026-10-13','event_time':'08:30'}
+  self.assertIsNone(self.rows(base)[0]['at'])
+  self.assertEqual(self.rows({**base,'timezone':'America/New_York'})[0]['at'],1791894600000)
+  ambiguous={**base,'event_date':'2026-11-01','event_time':'01:30','timezone':'America/New_York'}
+  self.assertIsNone(self.rows(ambiguous)[0]['at'])
+ def test_invalid_dates_rejected_and_duplicate_keys_collapsed(self):
+  with self.assertRaises(ValueError):self.rows({'title':'Bad','event_date':'2026-99-99'})
+  row={'event_key':'abc','title':'One','date':'2026-10-06'}
+  self.assertEqual(len(self.rows(row,row)),1)
+ def test_provider_schedule_is_not_estimated_or_independently_verified(self):
+  row=self.rows({'title':'Earnings call','event_date':'2026-10-13','source_status':'provider_schedule'})[0]
+  self.assertFalse(row['estimated']);self.assertEqual(row['sourceStatus'],'provider_schedule');self.assertIsNone(row['at'])
+ def test_collect_recovery_partial_result_throttle_and_failure_cache(self):
+  from unittest.mock import patch
+  with tempfile.TemporaryDirectory() as d:
+   store=Store(Path(d)/'state.json');store.data['calendar']={'status':'error','httpStatus':400,'items':[]}
+   def request(*args):return json.dumps({'success':True,'data':{'status':'partial_result','events':[{'title':'CPI','date':'2026-10-14'}]}})
+   with patch('intelligence.time.time',return_value=NOW/1000):store.collect_calendar(request,lambda x:None,True)
+   good=store.snapshot()['calendar'];self.assertEqual(good['status'],'partial');self.assertNotIn('httpStatus',good)
+   calls=[]
+   with patch('intelligence.time.time',return_value=NOW/1000+10):store.collect_calendar(lambda *args:calls.append(args),lambda x:None,True)
+   self.assertEqual(calls,[])
+   def fail(*args):raise ValueError('private-token')
+   with patch('intelligence.time.time',return_value=NOW/1000+4000):store.collect_calendar(fail,lambda x:None,True)
+   bad=store.snapshot()['calendar'];self.assertEqual(bad['status'],'error');self.assertEqual(bad['items'],good['items']);self.assertEqual(bad['lastSuccessAt'],good['lastSuccessAt']);self.assertNotIn('private',json.dumps(bad))
